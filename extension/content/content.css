@@ -1,0 +1,15 @@
+/* ScamShield AI - Content Script Styles */
+#scamshield-warning {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

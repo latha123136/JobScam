@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScamShield AI</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <div class="logo-icon">🛡️</div>
+        <div>
+          <h1>ScamShield AI</h1>
+          <p class="subtitle">Job Scam Detector</p>
+        </div>
+      </div>
+      <div class="status online">
+        <span class="dot"></span>
+        Active
+      </div>
+    </div>
+
+    <!-- Quick Scan -->
+    <div class="section">
+      <h2>Quick Scan</h2>
+      <textarea id="jobText" placeholder="Paste job description or recruiter message here..."></textarea>
+      <button id="scanBtn" class="btn-primary">
+        <span class="btn-icon">🔍</span>
+        Analyze for Scams
+      </button>
+    </div>
+
+    <!-- Scan Current Page -->
+    <button id="scanPageBtn" class="btn-secondary">
+      <span class="btn-icon">🌐</span>
+      Scan Current Page
+    </button>
+
+    <!-- Results -->
+    <div id="results" class="results hidden">
+      <div class="result-header">
+        <div id="riskMeter" class="risk-meter">
+          <div class="risk-score" id="riskScore">0</div>
+          <div class="risk-label" id="riskLabel">Analyzing...</div>
+        </div>
+      </div>
+
+      <div id="riskLevel" class="risk-badge"></div>
+
+      <!-- Reasons -->
+      <div id="reasons" class="reasons"></div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <p>AI analyzing...</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <a href="http://localhost:5173/dashboard" target="_blank">Open Full Dashboard</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
