@@ -25,30 +25,6 @@ class ScamDetectionEngine:
         self.model_loaded = False
         self._load_model_files()
 
-    def _load_model_files(self):
-        """Load model and vectorizer from disk. Safe to call multiple times."""
-        model_path = os.path.join(MODEL_DIR, "model.pkl")
-        vec_path = os.path.join(MODEL_DIR, "vectorizer.pkl")
-        try:
-            self.model = joblib.load(model_path)
-            self.vectorizer = joblib.load(vec_path)
-            self.model_loaded = True
-            logger.info("ML model loaded successfully.")
-        except Exception as e:
-            self.model_loaded = False
-            logger.warning(f"ML model not loaded (rule-based only): {e}")
-
-    def reload_model(self):
-        """
-        Hot-swap the model and vectorizer without restarting the server.
-        Called by RetrainingEngine after a successful retrain.
-        Thread-safe: joblib.load is atomic at the OS level after
-        the atomic rename in _atomic_save_model().
-        """
-        logger.info("Hot-reloading ML model into live engine...")
-        self._load_model_files()
-        logger.info(f"Hot-reload complete. model_loaded={self.model_loaded}")
-
         # India-specific scam phrases
         self.scam_phrases = [
             "earn .* lakh", "earn .* per month", "no interview",
@@ -90,6 +66,28 @@ class ScamDetectionEngine:
             "provident fund", "annual leave", "probation period",
             "background verification", "reference check"
         ]
+
+    def _load_model_files(self):
+        """Load model and vectorizer from disk. Safe to call multiple times."""
+        model_path = os.path.join(MODEL_DIR, "model.pkl")
+        vec_path = os.path.join(MODEL_DIR, "vectorizer.pkl")
+        try:
+            self.model = joblib.load(model_path)
+            self.vectorizer = joblib.load(vec_path)
+            self.model_loaded = True
+            logger.info("ML model loaded successfully.")
+        except Exception as e:
+            self.model_loaded = False
+            logger.warning(f"ML model not loaded (rule-based only): {e}")
+
+    def reload_model(self):
+        """
+        Hot-swap the model and vectorizer without restarting the server.
+        Called by RetrainingEngine after a successful retrain.
+        """
+        logger.info("Hot-reloading ML model into live engine...")
+        self._load_model_files()
+        logger.info(f"Hot-reload complete. model_loaded={self.model_loaded}")
 
     def analyze_text(self, text: str) -> Dict:
         """
