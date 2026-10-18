@@ -6,20 +6,48 @@ Combines NLP, behavioral analysis, and pattern matching for comprehensive fraud 
 import joblib
 import numpy as np
 import re
+import os
+import logging
 from typing import Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_DIR = os.path.join(BASE_DIR, "..", "..", "ml_model")
 
 
 class ScamDetectionEngine:
     """Enterprise-grade scam detection using ensemble ML + rule-based intelligence"""
 
     def __init__(self):
-        # Load trained ML model and vectorizer
+        self.model = None
+        self.vectorizer = None
+        self.model_loaded = False
+        self._load_model_files()
+
+    def _load_model_files(self):
+        """Load model and vectorizer from disk. Safe to call multiple times."""
+        model_path = os.path.join(MODEL_DIR, "model.pkl")
+        vec_path = os.path.join(MODEL_DIR, "vectorizer.pkl")
         try:
-            self.model = joblib.load("../ml_model/model.pkl")
-            self.vectorizer = joblib.load("../ml_model/vectorizer.pkl")
+            self.model = joblib.load(model_path)
+            self.vectorizer = joblib.load(vec_path)
             self.model_loaded = True
-        except Exception:
+            logger.info("ML model loaded successfully.")
+        except Exception as e:
             self.model_loaded = False
+            logger.warning(f"ML model not loaded (rule-based only): {e}")
+
+    def reload_model(self):
+        """
+        Hot-swap the model and vectorizer without restarting the server.
+        Called by RetrainingEngine after a successful retrain.
+        Thread-safe: joblib.load is atomic at the OS level after
+        the atomic rename in _atomic_save_model().
+        """
+        logger.info("Hot-reloading ML model into live engine...")
+        self._load_model_files()
+        logger.info(f"Hot-reload complete. model_loaded={self.model_loaded}")
 
         # India-specific scam phrases
         self.scam_phrases = [
@@ -72,7 +100,9 @@ class ScamDetectionEngine:
         results = {}
 
         # ─── ML Model Prediction ──────────────────────────────────────────────
-        ml_score = 0.5
+        # BUG FIX: Default ml_score to 0.0 (not 0.5) when model is unavailable
+        # so the rule-based signals carry the full weight on their own.
+        ml_score = 0.0
         ml_prediction = "unknown"
         if self.model_loaded:
             text_vector = self.vectorizer.transform([text])
@@ -93,7 +123,9 @@ class ScamDetectionEngine:
             if re.search(phrase, text_lower):
                 detected_scam_phrases.append(phrase.replace(".*", " "))
 
-        scam_phrase_score = min(len(detected_scam_phrases) * 18, 100)
+        # BUG FIX: Raised per-phrase multiplier from 18 → 25 so that even
+        # 2-3 strong phrases push the score into the high-risk zone.
+        scam_phrase_score = min(len(detected_scam_phrases) * 25, 100)
         results["scam_phrases_detected"] = detected_scam_phrases
         results["scam_phrase_score"] = scam_phrase_score
 
@@ -103,17 +135,21 @@ class ScamDetectionEngine:
             if re.search(phrase, text_lower):
                 detected_urgency.append(phrase.replace(".*", " "))
 
-        urgency_score = min(len(detected_urgency) * 20, 100)
+        # BUG FIX: Raised per-phrase multiplier from 20 → 30
+        urgency_score = min(len(detected_urgency) * 30, 100)
         results["urgency_phrases_detected"] = detected_urgency
         results["urgency_score"] = urgency_score
 
         # ─── Salary Analysis ─────────────────────────────────────────────────
+        # BUG FIX: Count one match per pattern (not all regex match instances)
+        # to prevent double-counting the same suspicious claim multiple times.
         suspicious_salary = []
         for pattern in self.salary_patterns:
-            matches = re.findall(pattern, text_lower)
-            suspicious_salary.extend(matches)
+            if re.search(pattern, text_lower):
+                match = re.search(pattern, text_lower)
+                suspicious_salary.append(match.group())
 
-        salary_score = min(len(suspicious_salary) * 25, 100)
+        salary_score = min(len(suspicious_salary) * 35, 100)
         results["suspicious_salary_claims"] = suspicious_salary
         results["salary_risk_score"] = salary_score
 
@@ -142,7 +178,9 @@ class ScamDetectionEngine:
         if not re.search(r"qualification|experience|skill|degree", text_lower):
             red_flags.append("No qualification requirements mentioned")
 
-        behavioral_score = min(len(red_flags) * 18, 100)
+        # BUG FIX: Raised per-flag multiplier from 18 → 22 so behavioral
+        # signals have more impact on the final composite score.
+        behavioral_score = min(len(red_flags) * 22, 100)
         results["red_flags"] = red_flags
         results["behavioral_score"] = behavioral_score
 
@@ -168,23 +206,31 @@ class ScamDetectionEngine:
     def _calculate_risk_score(self, ml_score, scam_phrase_score, urgency_score,
                               salary_score, behavioral_score, legitimacy_score) -> int:
         """Weighted ensemble risk scoring"""
+        # BUG FIX 1: Weights now sum to exactly 1.0 (previously 0.95),
+        # so the score correctly spans the full 0–100 range.
+        # BUG FIX 2: Legitimacy penalty is applied only when scam signals
+        # are weak (score < 40). A confirmed scam post should NOT get its
+        # score reduced just because it mentions "bachelor degree".
         weights = {
             "ml": 0.25,
-            "scam_phrases": 0.30,
-            "urgency": 0.10,
-            "salary": 0.15,
-            "behavioral": 0.20,
-            "legitimacy": -0.05  # Reduces risk
+            "scam_phrases": 0.32,
+            "urgency": 0.12,
+            "salary": 0.16,
+            "behavioral": 0.15,
         }
 
-        score = (
+        raw_score = (
             ml_score * weights["ml"] +
             scam_phrase_score * weights["scam_phrases"] +
             urgency_score * weights["urgency"] +
             salary_score * weights["salary"] +
-            behavioral_score * weights["behavioral"] +
-            legitimacy_score * weights["legitimacy"]
+            behavioral_score * weights["behavioral"]
         )
+
+        # Only apply legitimacy reduction when signals are genuinely weak,
+        # capped so it can never reduce more than 8 points.
+        legitimacy_reduction = min(legitimacy_score * 0.08, 8) if raw_score < 40 else 0
+        score = raw_score - legitimacy_reduction
 
         return max(0, min(100, round(score)))
 

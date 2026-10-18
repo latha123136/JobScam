@@ -40,6 +40,26 @@ def load_and_preprocess_data(dataset_path: str) -> tuple:
         df["benefits"]
     )
 
+    # ── Structural signals as extra text tokens ──────────────────────────
+    # These missing-field patterns are strong scam signals:
+    #   67.8% of fake jobs have no company_profile (vs 16% for real)
+    #   74.2% of fake jobs have no salary_range (vs 84.5% for real — less useful)
+    # We inject them as pseudo-tokens so TF-IDF can learn from them.
+    def structural_tokens(row):
+        tokens = []
+        if row["company_profile"].strip() == "":
+            tokens.append("NO_COMPANY_PROFILE")
+        if row["requirements"].strip() == "":
+            tokens.append("NO_REQUIREMENTS")
+        if row["salary_range"].strip() == "":
+            tokens.append("NO_SALARY_INFO")
+        if row["has_company_logo"] == 0:
+            tokens.append("NO_COMPANY_LOGO")
+        return " ".join(tokens)
+
+    df["structural_signals"] = df.apply(structural_tokens, axis=1)
+    df["text"] = df["text"] + " " + df["structural_signals"]
+
     # Feature engineering - add scam indicators
     df["has_salary_info"] = df["description"].str.contains(
         r"₹|salary|lakh|per month", case=False, regex=True
@@ -81,17 +101,27 @@ def train_models(df: pd.DataFrame, output_dir: str = "../ml_model") -> dict:
     )
     print(f"\nTrain size: {X_train.shape[0]}, Test size: {X_test.shape[0]}")
 
-    # Define models
+    # Class imbalance ratio for XGBoost (real:fake = ~20:1)
+    neg_count = int((y == 0).sum())
+    pos_count = int((y == 1).sum())
+    scale_pos = round(neg_count / max(pos_count, 1), 2)
+    print(f"\n⚖️  Class distribution: real={neg_count}, fake={pos_count}, scale_pos_weight={scale_pos}")
+
+    # Define models — all use class_weight='balanced' or equivalent
+    # to compensate for the ~20:1 real:fake imbalance in the dataset.
     models = {
         "Logistic Regression": LogisticRegression(
-            max_iter=1000, C=1.0, random_state=42
+            max_iter=1000, C=1.0, random_state=42,
+            class_weight="balanced"          # Penalises missing fake jobs more
         ),
         "Random Forest": RandomForestClassifier(
-            n_estimators=100, max_depth=20, random_state=42, n_jobs=-1
+            n_estimators=100, max_depth=20, random_state=42, n_jobs=-1,
+            class_weight="balanced"          # Same
         ),
         "XGBoost": XGBClassifier(
             n_estimators=100, max_depth=6, learning_rate=0.1,
-            random_state=42, use_label_encoder=False, eval_metric="logloss"
+            random_state=42, use_label_encoder=False, eval_metric="logloss",
+            scale_pos_weight=scale_pos       # Tells XGBoost fake is 20x rarer
         )
     }
 

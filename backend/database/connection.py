@@ -65,6 +65,7 @@ if DB_AVAILABLE:
     feedback_collection = database["feedback"]
     chatbot_collection = database["chatbot_logs"]
     analytics_collection = database["analytics"]
+    retraining_logs_collection = database["retraining_logs"]
 else:
     users_collection = MockCollection()
     predictions_collection = MockCollection()
@@ -73,6 +74,7 @@ else:
     feedback_collection = MockCollection()
     chatbot_collection = MockCollection()
     analytics_collection = MockCollection()
+    retraining_logs_collection = MockCollection()
 
 
 async def get_database():

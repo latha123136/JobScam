@@ -26,6 +26,7 @@ from api.history import router as history_router
 from api.feedback import router as feedback_router
 from api.analytics import router as analytics_router
 from api.scraping import router as scraping_router
+from api.retrain import router as retrain_router
 
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
@@ -65,6 +66,7 @@ app.include_router(history_router, prefix="/api", tags=["History"])
 app.include_router(feedback_router, prefix="/api", tags=["Feedback"])
 app.include_router(analytics_router, prefix="/api", tags=["Analytics"])
 app.include_router(scraping_router, prefix="/api", tags=["Real-Time Scraping"])
+app.include_router(retrain_router, prefix="/api", tags=["Model Retraining"])
 
 
 @app.get("/", tags=["Health"])
