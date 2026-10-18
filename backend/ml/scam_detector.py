@@ -26,19 +26,50 @@ class ScamDetectionEngine:
         self._load_model_files()
 
         # India-specific scam phrases
+        # Patterns are deliberately specific to avoid firing on legitimate jobs.
+        # e.g. "work from home.*earn" requires BOTH "work from home" AND "earn"
+        # in the same text — a legitimate remote job with a salary wouldn't match.
         self.scam_phrases = [
-            "earn .* lakh", "earn .* per month", "no interview",
-            "instant joining", "pay registration fee", "guaranteed placement",
-            "captcha typing", "work from home.*earn", "no experience required.*earn",
-            "pay.*fee", "registration.*charge", "security deposit",
-            "whatsapp.*interview", "telegram.*job", "data entry.*earn",
-            "copy paste.*job", "form filling.*job", "ad posting.*job",
-            "sms sending.*job", "email sending.*job", "pay.*advance",
-            "refundable.*deposit", "training fee", "joining fee",
-            "earn.*daily", "earn.*weekly", "guaranteed.*income",
-            "no qualification", "10th pass.*earn", "12th pass.*earn",
-            "part time.*lakh", "full time.*lakh", "simple work.*earn",
-            "mobile.*job", "laptop.*job", "home based.*lakh"
+            # Payment / fee scams — very specific, rarely in real postings
+            r"pay\s+registration\s+fee",
+            r"registration\s+fee",
+            r"training\s+fee",
+            r"joining\s+fee",
+            r"security\s+deposit",
+            r"refundable\s+deposit",
+            r"pay.*advance",
+            r"registration.*charge",
+            # Unrealistic earn claims — require "earn" + amount/lakh together
+            r"earn\s+\d+\s*lakh",
+            r"earn\s+\d+\s*k?\s*per\s+month",
+            r"earn\s+\d+\s*daily",
+            r"earn\s+\d+\s*weekly",
+            r"home\s+based.*lakh",
+            r"part\s+time.*lakh",
+            # No-interview / instant patterns
+            r"no\s+interview\s+needed",
+            r"no\s+interview\s+required",
+            r"instant\s+joining",
+            r"guaranteed\s+placement",
+            # Informal platform recruitment
+            r"whatsapp.*interview",
+            r"telegram.*job",
+            r"whatsapp.*job",
+            # Work-type scams — require the earn context to avoid false positives
+            r"captcha\s+typing",
+            r"copy\s+paste.*job",
+            r"form\s+filling.*job",
+            r"ad\s+posting.*job",
+            r"sms\s+sending.*job",
+            r"email\s+sending.*job",
+            r"data\s+entry.*earn",
+            r"work\s+from\s+home.*earn\s+\d+",
+            r"no\s+experience\s+required.*earn",
+            r"no\s+qualification",
+            r"10th\s+pass.*earn",
+            r"12th\s+pass.*earn",
+            r"simple\s+work.*earn",
+            r"guaranteed\s+income",
         ]
 
         # Urgency manipulation phrases
@@ -119,11 +150,18 @@ class ScamDetectionEngine:
         detected_scam_phrases = []
         for phrase in self.scam_phrases:
             if re.search(phrase, text_lower):
-                detected_scam_phrases.append(phrase.replace(".*", " "))
+                # Clean up the pattern for display
+                clean = re.sub(r'\\s\+', ' ', phrase)
+                clean = re.sub(r'\\s\*', ' ', clean)
+                clean = re.sub(r'\(.*?\)', '', clean)
+                clean = re.sub(r'[\\.*+?]', ' ', clean).strip()
+                detected_scam_phrases.append(clean)
 
-        # BUG FIX: Raised per-phrase multiplier from 18 → 25 so that even
-        # 2-3 strong phrases push the score into the high-risk zone.
-        scam_phrase_score = min(len(detected_scam_phrases) * 25, 100)
+        # Each phrase match adds 20 pts to channel score (max 100).
+        # Channel is weighted at 40% so maxing it out (5+ phrases) contributes
+        # 40 pts toward the final score — enough to reach High Risk on its own
+        # when combined with behavioral flags.
+        scam_phrase_score = min(len(detected_scam_phrases) * 20, 100)
         results["scam_phrases_detected"] = detected_scam_phrases
         results["scam_phrase_score"] = scam_phrase_score
 
@@ -171,7 +209,7 @@ class ScamDetectionEngine:
             red_flags.append("Payment requested from candidate")
         if re.search(r"gmail\.com|yahoo\.com|hotmail\.com", text_lower) and re.search(r"hr|recruit|career", text_lower):
             red_flags.append("Recruiter using free email provider")
-        if len(text.split()) < 50:
+        if len(text.split()) < 30:  # Raised from 50 → 30 to reduce false positives on real short excerpts
             red_flags.append("Very short job description")
         if not re.search(r"qualification|experience|skill|degree", text_lower):
             red_flags.append("No qualification requirements mentioned")
@@ -204,16 +242,15 @@ class ScamDetectionEngine:
     def _calculate_risk_score(self, ml_score, scam_phrase_score, urgency_score,
                               salary_score, behavioral_score, legitimacy_score) -> int:
         """Weighted ensemble risk scoring"""
-        # BUG FIX 1: Weights now sum to exactly 1.0 (previously 0.95),
-        # so the score correctly spans the full 0–100 range.
-        # BUG FIX 2: Legitimacy penalty is applied only when scam signals
-        # are weak (score < 40). A confirmed scam post should NOT get its
-        # score reduced just because it mentions "bachelor degree".
+        # Weights sum to exactly 1.0.
+        # Scam phrases at 0.40 — 5+ phrase matches alone pushes to High Risk.
+        # Behavioral at 0.15 — multiple red flags add meaningful contribution.
+        # ML at 0.25 — significant boost when model is trained and loaded.
         weights = {
             "ml": 0.25,
-            "scam_phrases": 0.32,
-            "urgency": 0.12,
-            "salary": 0.16,
+            "scam_phrases": 0.40,
+            "urgency": 0.10,
+            "salary": 0.10,
             "behavioral": 0.15,
         }
 
