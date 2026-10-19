@@ -52,8 +52,9 @@ async def predict_scam(data: JobAnalysisRequest):
     if not data.text or len(data.text.strip()) < 10:
         raise HTTPException(status_code=400, detail="Job text must be at least 10 characters")
 
-    # Run multi-modal analysis
-    results = scam_engine.analyze_text(data.text)
+    # Run multi-modal analysis — pass url and email so behavioral flags
+    # incorporate domain-trust and recruiter-email signals directly.
+    results = scam_engine.analyze_text(data.text, url=data.url, email=data.email)
 
     # Store prediction in database
     try:
@@ -83,7 +84,7 @@ async def quick_scan(data: JobAnalysisRequest):
     if not data.text or len(data.text.strip()) < 5:
         raise HTTPException(status_code=400, detail="Text too short for analysis")
 
-    results = scam_engine.analyze_text(data.text)
+    results = scam_engine.analyze_text(data.text, url=data.url, email=data.email)
 
     return {
         "risk_score": results["risk_score"],

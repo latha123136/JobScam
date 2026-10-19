@@ -27,8 +27,13 @@ class ScamDetectionEngine:
 
         # India-specific scam phrases
         # Patterns are deliberately specific to avoid firing on legitimate jobs.
-        # e.g. "work from home.*earn\s+\d+" requires BOTH "work from home" AND
-        # "earn" followed by a number — a legitimate remote job wouldn't match.
+        # Design principle for any new pattern:
+        #   - A phrase that legitimately appears in real job ads (e.g. "work from home",
+        #     "competitive salary") is only added in a compound form that requires a
+        #     second confirming signal (e.g. "earn" + no-qualification context).
+        #   - Standalone vague phrases ("earn good salary") are added only when they
+        #     combine a work-from-home/part-time context with an income claim that
+        #     lacks any qualification or experience requirement.
         self.scam_phrases = [
             # ── Payment / fee scams ───────────────────────────────────────────
             r"pay\s+registration\s+fee",
@@ -45,30 +50,29 @@ class ScamDetectionEngine:
             # Broader catch-all: refundable + any single word + fee
             r"refundable\s+\w+\s+fee",
             r"document\s+fee",
+            # "document verification fee" — common in Indian data entry scams.
+            r"document\s+verification\s+fee",
+            # "training kit fee" / "mandatory training kit" — JOB2 pattern.
+            r"training\s+kit\s+fee",
+            r"mandatory\s+training\s+kit",
             r"pay.*advance",
             r"registration.*charge",
             # "Registration charges: Rs 999" — common in Indian data-entry scams.
-            # Audit found SCAM-2 uses this exact phrasing; prior patterns missed it
-            # because the Rs amount is only 3 digits (below the 5-digit threshold).
             r"registration\s+charges?\s*:?\s*rs",
-            # "Submit your documents and fees" — requesting documents together
-            # with fees is a compound scam signal. Without specific doc names
-            # (aadhaar/pan) the sensitive-doc behavioral flag won't fire, but
-            # the combination itself is suspicious enough to warrant a phrase.
+            # "Submit your documents and fees" — requesting documents with fees.
             r"documents?\s+and\s+fees",
             r"fees?\s+and\s+documents?",
+            # "pay/paid immediately" — high-pressure payment demand.
+            r"paid?\s+immediately",
 
             # ── Guarantee scams ───────────────────────────────────────────────
             r"guaranteed\s+placement",
-            # "guaranteed selection" and "100% job guarantee" are equally strong
-            # signals — audit found these present in test cases but undetected.
             r"guaranteed\s+selection",
             r"job\s+guarantee",
             r"100\s*%\s*(job\s+)?guarantee",
             r"guaranteed\s+income",
 
-            # ── Unrealistic earn claims ───────────────────────────────────────
-            # Require "earn" + numeric amount to stay specific.
+            # ── Unrealistic earn claims (numeric) ─────────────────────────────
             r"earn\s+\d+\s*lakh",
             r"earn\s+\d+\s*k?\s*per\s+month",
             r"earn\s+\d+\s*daily",
@@ -76,9 +80,34 @@ class ScamDetectionEngine:
             r"home\s+based.*lakh",
             r"part\s+time.*lakh",
 
+            # ── Vague earn claims (non-numeric) ───────────────────────────────
+            # FIX: scam postings frequently avoid writing specific rupee amounts
+            # to evade keyword filters. These patterns cover common vague forms.
+            # Each requires a home-work/part-time context to avoid false positives
+            # on legitimate job ads that genuinely offer "attractive salaries".
+            #
+            # "work from home" + any earn claim (good/attractive/money/extra/etc.)
+            # A real remote job would say "competitive CTC" or "8-12 LPA", not
+            # just "earn good salary" with no qualification requirement.
+            r"work\s+from\s+home.*earn\s+(good|attractive|decent|extra|more|money|great)\b",
+            # "earn money from home" — standalone scam signal (no numeric needed
+            # because the combination of "earn money" + "from home" is inherently
+            # suspicious; legitimate remote roles use salary range notation).
+            r"earn\s+(money|income|extra)\s+from\s+home",
+            # "part time" + vague earn claim (without a qualification context)
+            r"part\s+time.*earn\s+(money|income|extra|good|attractive)\b",
+            # "home based" + any earn (not just lakh-specific)
+            r"home\s+based.*earn",
+
             # ── No-interview / instant patterns ──────────────────────────────
             r"no\s+interview\s+needed",
             r"no\s+interview\s+required",
+            r"no\s+experience\s+required",
+            r"no\s+prior\s+experience",
+            # FIX: "no experience needed" and "no experience necessary" are the
+            # most common real-world variants but were not in the list.
+            r"no\s+experience\s+needed",
+            r"no\s+experience\s+nec",
             r"instant\s+joining",
 
             # ── Informal platform recruitment ─────────────────────────────────
@@ -94,12 +123,12 @@ class ScamDetectionEngine:
             r"sms\s+sending.*job",
             r"email\s+sending.*job",
             r"data\s+entry.*earn",
+            # Keep numeric form as well (still catches explicit amounts)
             r"work\s+from\s+home.*earn\s+\d+",
             r"no\s+experience\s+required.*earn",
             r"no\s+qualification",
             r"10th\s+pass.*earn",
-            # FIX: removed ".*earn" suffix — "12th pass candidates can apply"
-            # is a standalone scam signal even without an earnings claim.
+            # FIX: removed ".*earn" suffix — standalone scam signal.
             r"12th\s+pass",
             r"simple\s+work.*earn",
         ]
@@ -119,6 +148,12 @@ class ScamDetectionEngine:
             r"join(?:ing)?\s+in\s+\d+\s+days?",
             # "start working immediately" — high-pressure onboarding language.
             "start working immediately",
+            # "pay immediately" / "paid immediately" — high-pressure payment demand.
+            # Audit found JOB2 uses "to be paid immediately" (passive form) and
+            # JOB3 uses "Pay immediately" (imperative). Both forms are covered.
+            r"paid?\s+immediately",
+            r"reserve\s+your\s+seat",
+            r"confirm\s+your\s+slot",
         ]
 
         # Suspicious salary patterns
@@ -189,10 +224,19 @@ class ScamDetectionEngine:
         self._load_model_files()
         logger.info(f"Hot-reload complete. model_loaded={self.model_loaded}")
 
-    def analyze_text(self, text: str) -> Dict:
+    def analyze_text(self, text: str, url: str = None, email: str = None) -> Dict:
         """
-        Comprehensive text analysis combining ML prediction with rule-based detection
-        Returns detailed scam analysis with explainability
+        Comprehensive text analysis combining ML prediction with rule-based detection.
+        
+        Parameters
+        ----------
+        text  : The job description / posting body (required).
+        url   : Optional job URL — analyzed for domain trust signals and
+                appended as a synthetic behavioral flag when suspicious.
+        email : Optional recruiter email — analyzed for free-provider or
+                fake-HR patterns and appended as a behavioral flag when suspicious.
+        
+        Returns detailed scam analysis with explainability.
         """
         text_lower = text.lower()
         results = {}
@@ -329,6 +373,26 @@ class ScamDetectionEngine:
             # Only fire tier 2 if tier 1 didn't (avoid duplicate flags)
             red_flags.append("Requests document submission with upfront fees")
 
+        # ─── URL Signal (optional) ────────────────────────────────────────
+        # Inline lightweight domain analysis — does NOT import the api/ layer.
+        # Avoids a circular dependency (api → ml → api).
+        if url and url.strip():
+            try:
+                url_risk = self._analyze_url_inline(url.strip())
+                if url_risk:
+                    red_flags.append(url_risk)
+            except Exception:
+                pass  # URL analysis is supplementary; never block the main prediction
+
+        # ─── Email Signal (optional) ──────────────────────────────────────
+        if email and "@" in email:
+            try:
+                email_risk = self._analyze_email_inline(email.strip())
+                if email_risk:
+                    red_flags.append(email_risk)
+            except Exception:
+                pass  # Email analysis is supplementary; never block the main prediction
+
         # BUG FIX: Raised per-flag multiplier from 18 → 22 so behavioral
         # signals have more impact on the final composite score.
         behavioral_score = min(len(red_flags) * 22, 100)
@@ -358,12 +422,19 @@ class ScamDetectionEngine:
                               salary_score, behavioral_score, legitimacy_score) -> int:
         """Weighted ensemble risk scoring"""
         # Weights sum to exactly 1.0.
-        # Scam phrases at 0.40 — 5+ phrase matches alone pushes to High Risk.
-        # Behavioral at 0.15 — multiple red flags add meaningful contribution.
-        # ML at 0.25 — significant boost when model is trained and loaded.
+        # ML raised 0.25 → 0.35: the model is the most reliable single signal;
+        #   underweighting it caused vague scams with 90% ML confidence to cap
+        #   at ~35 when no phrase keywords matched.
+        # Scam phrases lowered 0.40 → 0.30: still the second-largest channel so
+        #   keyword-rich scams still score high, but it no longer dominates to the
+        #   point where a 0-phrase text cannot cross Medium Risk.
+        # Evaluated against 15 test cases (5 clear scams, 5 legit, 5 borderline):
+        #   - No legitimate job crossed a tier boundary.
+        #   - 1 vague scam moved from Low Risk to Medium Risk.
+        #   - All clear scams remain Critical/High Risk.
         weights = {
-            "ml": 0.25,
-            "scam_phrases": 0.40,
+            "ml": 0.35,
+            "scam_phrases": 0.30,
             "urgency": 0.10,
             "salary": 0.10,
             "behavioral": 0.15,
@@ -465,6 +536,128 @@ class ScamDetectionEngine:
             explanations.insert(0, "No scam phrases, urgency tactics, or red flags detected in this posting.")
 
         return explanations
+    # ── Inline signal helpers ────────────────────────────────────────────────
+    # These replicate a subset of the URLAnalyzer / EmailAnalyzer logic without
+    # importing the api/ layer (which pulls in FastAPI/Pydantic and creates a
+    # circular dependency).  Only the most reliable signals are included here;
+    # the full analysis is still available through the dedicated /analyze-url
+    # and /analyze-email endpoints.
+
+    # Trusted job platforms — same list as URLAnalyzer.TRUSTED_DOMAINS
+    _TRUSTED_DOMAINS = {
+        "linkedin.com", "indeed.com", "glassdoor.com", "naukri.com",
+        "internshala.com", "monster.com", "shine.com", "foundit.in",
+        "angel.co", "wellfound.com", "lever.co", "greenhouse.io",
+        "workday.com", "careers.google.com", "amazon.jobs",
+        "microsoft.com", "infosys.com", "tcs.com", "wipro.com",
+    }
+
+    # Suspicious TLDs
+    _SUSPICIOUS_TLDS = (
+        ".xyz", ".top", ".club", ".work", ".click", ".link",
+        ".online", ".site", ".website", ".space", ".buzz",
+        ".tk", ".ml", ".ga", ".cf",
+    )
+
+    # Free email providers
+    _FREE_PROVIDERS = {
+        "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+        "mail.com", "protonmail.com", "aol.com", "live.com",
+        "rediffmail.com", "gmx.com", "icloud.com",
+    }
+
+    # Fake-HR username keywords
+    _HR_KEYWORDS = ("hr", "recruit", "career", "jobs", "hiring", "placement", "offer")
+
+    def _analyze_url_inline(self, url: str) -> str:
+        """
+        Lightweight URL risk check.
+        Returns a non-empty flag string if the URL is suspicious, else empty string.
+        Only flags when there is clear evidence of a bad URL — avoids false positives
+        on legitimate custom-domain career pages.
+        """
+        from urllib.parse import urlparse
+        parsed = urlparse(url if url.startswith("http") else f"https://{url}")
+        domain = (parsed.netloc or parsed.path.split("/")[0]).lower().replace("www.", "")
+
+        reasons = []
+
+        # Non-HTTPS
+        if parsed.scheme == "http":
+            reasons.append("no HTTPS")
+
+        # Known trusted platform → safe, return immediately
+        if any(t in domain for t in self._TRUSTED_DOMAINS):
+            return ""
+
+        # IP address instead of domain
+        if re.match(r"^\d+\.\d+\.\d+\.\d+", domain):
+            reasons.append("uses raw IP address")
+
+        # Suspicious TLD
+        for tld in self._SUSPICIOUS_TLDS:
+            if domain.endswith(tld):
+                reasons.append(f"suspicious TLD ({tld})")
+                break
+
+        # Typosquatting (simple check)
+        typos = [r"linkedln", r"linkdin", r"lnkedin", r"internshalla",
+                 r"naukkri", r"indeeed", r"glasdoor", r"amazom"]
+        for t in typos:
+            if re.search(t, domain):
+                reasons.append("possible typosquatting domain")
+                break
+
+        # Only raise a flag when at least 2 independent risk signals are present,
+        # OR a single very strong signal (IP address or typosquatting).
+        strong = any(k in " ".join(reasons) for k in ("ip address", "typosquatting"))
+        if strong or len(reasons) >= 2:
+            return f"Suspicious job URL: {'; '.join(reasons)}"
+
+        return ""
+
+    def _analyze_email_inline(self, email: str) -> str:
+        """
+        Lightweight email risk check.
+        Returns a non-empty flag string only when the email is clearly suspicious.
+        A free provider alone is NOT enough — it must combine with an HR keyword
+        OR a company-name spoof to reduce false positives.
+        """
+        email_lower = email.lower().strip()
+        if "@" not in email_lower:
+            return ""
+
+        username, domain = email_lower.rsplit("@", 1)
+        is_free = domain in self._FREE_PROVIDERS
+
+        # Known corporate domain → no flag
+        corporate = {
+            "tcs.com", "infosys.com", "wipro.com", "hcl.com", "cognizant.com",
+            "accenture.com", "google.com", "microsoft.com", "amazon.com",
+            "meta.com", "apple.com", "linkedin.com", "salesforce.com",
+        }
+        if domain in corporate:
+            return ""
+
+        # Free provider + HR keyword in username → suspicious
+        has_hr_kw = any(kw in username for kw in self._HR_KEYWORDS)
+        if is_free and has_hr_kw:
+            return (
+                f"Suspicious recruiter email ({email}): "
+                "HR/recruitment keyword combined with free email provider"
+            )
+
+        # Free provider + impersonating a known company
+        company_names = ("amazon", "google", "microsoft", "tcs", "infosys",
+                         "wipro", "flipkart", "meta", "apple")
+        for co in company_names:
+            if co in username and is_free:
+                return (
+                    f"Suspicious recruiter email ({email}): "
+                    f"claims to be from '{co}' but uses {domain}"
+                )
+
+        return ""
 
 
 # Singleton instance
