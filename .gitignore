@@ -21,6 +21,9 @@ Thumbs.db
 
 # ML Models (large files)
 *.pkl
+!ml_model/model.pkl
+!ml_model/vectorizer.pkl
+!ml_model/model_comparison.pkl
 *.h5
 *.pt
 
