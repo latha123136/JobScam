@@ -27,35 +27,66 @@ class ScamDetectionEngine:
 
         # India-specific scam phrases
         # Patterns are deliberately specific to avoid firing on legitimate jobs.
-        # e.g. "work from home.*earn" requires BOTH "work from home" AND "earn"
-        # in the same text — a legitimate remote job with a salary wouldn't match.
+        # e.g. "work from home.*earn\s+\d+" requires BOTH "work from home" AND
+        # "earn" followed by a number — a legitimate remote job wouldn't match.
         self.scam_phrases = [
-            # Payment / fee scams — very specific, rarely in real postings
+            # ── Payment / fee scams ───────────────────────────────────────────
             r"pay\s+registration\s+fee",
             r"registration\s+fee",
             r"training\s+fee",
             r"joining\s+fee",
             r"security\s+deposit",
             r"refundable\s+deposit",
+            # "refundable document fee" — explicit form found in test scam texts.
+            # The broader r"refundable\s+\w+\s+fee" misses it when display-cleaning
+            # mangles the pattern, so we keep both the explicit and broad form.
+            r"refundable\s+document\s+fee",
+            r"refundable\s+processing\s+fee",
+            # Broader catch-all: refundable + any single word + fee
+            r"refundable\s+\w+\s+fee",
+            r"document\s+fee",
             r"pay.*advance",
             r"registration.*charge",
-            # Unrealistic earn claims — require "earn" + amount/lakh together
+            # "Registration charges: Rs 999" — common in Indian data-entry scams.
+            # Audit found SCAM-2 uses this exact phrasing; prior patterns missed it
+            # because the Rs amount is only 3 digits (below the 5-digit threshold).
+            r"registration\s+charges?\s*:?\s*rs",
+            # "Submit your documents and fees" — requesting documents together
+            # with fees is a compound scam signal. Without specific doc names
+            # (aadhaar/pan) the sensitive-doc behavioral flag won't fire, but
+            # the combination itself is suspicious enough to warrant a phrase.
+            r"documents?\s+and\s+fees",
+            r"fees?\s+and\s+documents?",
+
+            # ── Guarantee scams ───────────────────────────────────────────────
+            r"guaranteed\s+placement",
+            # "guaranteed selection" and "100% job guarantee" are equally strong
+            # signals — audit found these present in test cases but undetected.
+            r"guaranteed\s+selection",
+            r"job\s+guarantee",
+            r"100\s*%\s*(job\s+)?guarantee",
+            r"guaranteed\s+income",
+
+            # ── Unrealistic earn claims ───────────────────────────────────────
+            # Require "earn" + numeric amount to stay specific.
             r"earn\s+\d+\s*lakh",
             r"earn\s+\d+\s*k?\s*per\s+month",
             r"earn\s+\d+\s*daily",
             r"earn\s+\d+\s*weekly",
             r"home\s+based.*lakh",
             r"part\s+time.*lakh",
-            # No-interview / instant patterns
+
+            # ── No-interview / instant patterns ──────────────────────────────
             r"no\s+interview\s+needed",
             r"no\s+interview\s+required",
             r"instant\s+joining",
-            r"guaranteed\s+placement",
-            # Informal platform recruitment
+
+            # ── Informal platform recruitment ─────────────────────────────────
             r"whatsapp.*interview",
             r"telegram.*job",
             r"whatsapp.*job",
-            # Work-type scams — require the earn context to avoid false positives
+
+            # ── Work-type scams ───────────────────────────────────────────────
             r"captcha\s+typing",
             r"copy\s+paste.*job",
             r"form\s+filling.*job",
@@ -67,9 +98,10 @@ class ScamDetectionEngine:
             r"no\s+experience\s+required.*earn",
             r"no\s+qualification",
             r"10th\s+pass.*earn",
-            r"12th\s+pass.*earn",
+            # FIX: removed ".*earn" suffix — "12th pass candidates can apply"
+            # is a standalone scam signal even without an earnings claim.
+            r"12th\s+pass",
             r"simple\s+work.*earn",
-            r"guaranteed\s+income",
         ]
 
         # Urgency manipulation phrases
@@ -77,16 +109,53 @@ class ScamDetectionEngine:
             "limited seats", "last date today", "hurry up",
             "offer expires", "immediate joining", "urgent requirement",
             "join today", "don't miss", "act now", "limited time",
-            "only.*seats left", "deadline today", "apply immediately",
-            "spot offer", "walk-in today"
+            r"only.*seats left", "deadline today", "apply immediately",
+            "spot offer", "walk-in today",
+            # FIX: patterns present in test scam texts but previously missing.
+            # "immediate vacancy" is distinct from "immediate joining" above.
+            "immediate vacancy",
+            # FIX: added "joining in N days" to cover both gerund and base verb forms.
+            # "joining in 3 days" (gerund) and "join in 2 days" (base verb) both fire.
+            r"join(?:ing)?\s+in\s+\d+\s+days?",
+            # "start working immediately" — high-pressure onboarding language.
+            "start working immediately",
         ]
 
         # Suspicious salary patterns
+        # FIX: added Rs/rs prefix variants with optional period and comma-formatted
+        # numbers to catch "Rs 85,000 per month", "Rs. 45,000 monthly",
+        # "Earn Rs. 45,000", "₹45,000 monthly" — all missed by prior patterns.
+        #
+        # Design notes to avoid false positives:
+        #   • "Rs" prefix patterns are anchored to monetary amounts (5+ digits
+        #     or comma-formatted) to avoid firing on product codes like "RS-100".
+        #   • "monthly" variant added alongside "per month" — audit found scam-2
+        #     used "monthly" but no pattern covered it.
+        #   • Legitimate salary descriptions in real job posts (e.g. "CTC 18 LPA",
+        #     "₹18 lakh per annum") do NOT match these patterns because they use
+        #     lakh/LPA notation already covered by existing legitimacy indicators.
         self.salary_patterns = [
-            r"₹\s*\d+\s*lakh", r"\d+\s*lakh\s*per\s*month",
-            r"earn\s*₹?\s*\d{5,}", r"\$\s*\d{4,}\s*per\s*day",
-            r"salary\s*₹?\s*\d+\s*lakh", r"\d+k\s*per\s*month",
-            r"earn\s*\d+\s*daily", r"income\s*₹?\s*\d{5,}"
+            # Existing patterns
+            r"₹\s*\d+\s*lakh",
+            r"\d+\s*lakh\s*per\s*month",
+            r"earn\s*₹?\s*\d{5,}",
+            r"\$\s*\d{4,}\s*per\s*day",
+            r"salary\s*₹?\s*\d+\s*lakh",
+            r"\d+k\s*per\s*month",
+            r"earn\s*\d+\s*daily",
+            r"income\s*₹?\s*\d{5,}",
+
+            # NEW: Rs prefix — matches "Rs 85,000", "Rs. 45,000", "rs 10000"
+            # Requires 5+ raw digits or comma-number (e.g. 45,000) to avoid
+            # matching small codes like "Rs 100 voucher".
+            r"rs\.?\s*[\d,]{5,}\s*per\s+month",
+            r"rs\.?\s*[\d,]{5,}\s*monthly",
+            r"earn\s+rs\.?\s*[\d,]{5,}",
+            r"salary\s*:?\s*rs\.?\s*[\d,]{5,}",
+
+            # NEW: ₹ symbol with comma-formatted amounts and "monthly" suffix
+            # Catches "₹45,000 monthly", "₹1,00,000 per month"
+            r"₹\s*[\d,]{5,}\s*(per\s+month|monthly)",
         ]
 
         # Legitimate job indicators
@@ -213,6 +282,52 @@ class ScamDetectionEngine:
             red_flags.append("Very short job description")
         if not re.search(r"qualification|experience|skill|degree", text_lower):
             red_flags.append("No qualification requirements mentioned")
+        # NEW: Requests for sensitive identity/financial documents before hiring
+        # is a primary fraud signal in India. The pattern requires the document
+        # name (aadhaar/pan card/bank account) AND a collection-action verb
+        # (send/submit/share/upload/provide/attach) nearby to avoid firing on
+        # routine mentions like "KYC may be required after joining".
+        #
+        # Two tiers of detection:
+        #   Tier 1 — specific document names (aadhaar/pan/bank account/etc.)
+        #            Fire unless text has "after joining" context without fees.
+        #   Tier 2 — generic "documents" requested TOGETHER with fee/payment signal
+        #            (e.g. "Submit your documents and fees"). The fee context
+        #            distinguishes scams from legitimate onboarding requests.
+        #
+        # Exception for both tiers: skip when the text contains "after joining"
+        # or "post-joining" AND there are no fee/registration signals — legitimate
+        # employers collect bank details post-hire.
+        _specific_docs = (
+            r"aadhaar|aadhar|pan\s+card|bank\s+account|account\s+number"
+            r"|ifsc|passbook|cancelled\s+cheque"
+        )
+        _action_verbs = r"send|submit|share|upload|provide|attach|email|whatsapp"
+        _has_specific_doc_action = bool(
+            re.search(rf"({_action_verbs}).{{0,80}}({_specific_docs})", text_lower)
+        ) or bool(
+            re.search(rf"({_specific_docs}).{{0,80}}({_action_verbs})", text_lower)
+        )
+        # Tier 2: generic "documents" + fee signal in same text
+        # (e.g. "Submit your documents and fees to start working")
+        _has_generic_doc_with_fee = bool(
+            re.search(rf"({_action_verbs}).{{0,40}}documents?", text_lower)
+        ) and bool(
+            re.search(r"fee|fees|charge|charges|deposit|payment|rs\.?\s*[\d,]+", text_lower)
+        )
+        # Suppress if it looks like a legitimate post-joining collection:
+        # text contains "after joining" or "post.*joining" AND no fee signals.
+        _post_joining_context = bool(
+            re.search(r"after\s+joining|post.{0,15}joining|post.{0,15}onboard", text_lower)
+        )
+        _has_fee_signal = bool(
+            re.search(r"fee|registration|charges?|deposit|advance\s+payment", text_lower)
+        )
+        if _has_specific_doc_action and not (_post_joining_context and not _has_fee_signal):
+            red_flags.append("Requests sensitive identity/financial documents before hiring")
+        elif _has_generic_doc_with_fee and not _post_joining_context:
+            # Only fire tier 2 if tier 1 didn't (avoid duplicate flags)
+            red_flags.append("Requests document submission with upfront fees")
 
         # BUG FIX: Raised per-flag multiplier from 18 → 22 so behavioral
         # signals have more impact on the final composite score.
