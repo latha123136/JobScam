@@ -153,3 +153,40 @@ npm run dev
 ## 📄 License
 
 MIT License - See LICENSE file for details.
+
+
+
+
+## steps to run this project
+Steps to Run This Project (from scratch)
+Prerequisites
+Python 3.10+
+Node.js 18+
+npm
+Step 1 — Create the .env file (backend)
+Copy .env.example to .env in the backend/ folder:
+
+backend/.env
+At minimum set MONGODB_URL. For local dev it defaults to mongodb://localhost:27017 (no MongoDB Atlas needed).
+
+Step 2 — Install Python dependencies
+cd backend
+python -m pip install -r requirements.txt
+Step 3 — Install frontend dependencies
+cd frontend/fake_job_detection
+npm install --legacy-peer-deps
+The --legacy-peer-deps flag is required because framer-motion has a peer dependency conflict with React 19.
+
+Step 4 — Start the backend
+cd backend
+python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+Step 5 — Start the frontend (in a separate terminal)
+cd frontend/fake_job_detection
+npm run dev
+Optional API Keys (in .env)
+The app runs without these, but some features will be limited:
+
+GEMINI_API_KEY — AI chatbot responses
+VIRUSTOTAL_API_KEY — URL malware scanning
+GOOGLE_SAFE_BROWSING_KEY — URL safety checks
+Open http://localhost:5173 in your browser and you're good to go.
