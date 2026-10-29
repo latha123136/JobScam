@@ -1,0 +1,126 @@
+jobscam running commands
+
+
+
+Commands to Run It Yourself
+Open two separate terminals:
+
+Terminal 1 — Backend:
+
+cd c:\Users\HP\OneDrive\Desktop\jobscam\JobScam\backend
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+
+ python -m uvicorn app:app --host 127.0.0.1 --port 8000 --reload
+
+Terminal 2 — Frontend:
+
+cd c:\Users\HP\OneDrive\Desktop\jobscam\JobScam\frontend\fake_job_detection
+npm run dev
+If packages are missing on a fresh machine:
+cd c:\Users\HP\OneDrive\Desktop\jobscam\JobScam\backend
+pip install -r requirements.txt
+
+
+cd c:\Users\HP\OneDrive\Desktop\jobscam\JobScam\frontend\fake_job_detection
+npm install
+
+
+
+
+Token:
+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
+
+
+
+
+
+
+
+
+
+PS C:\Users\HP\OneDrive\Desktop\jobscam\JobScam> cd "C:\Users\HP\OneDrive\Desktop\jobscam\JobScam\backend"
+>> python train_model.py
+
+============================================================
+🚀 AI JOB SCAM DETECTION - ML TRAINING PIPELINE
+============================================================
+============================================================
+📊 LOADING AND PREPROCESSING DATA
+============================================================
+Dataset shape: (17880, 18)
+Fraudulent distribution:
+fraudulent
+0    17014
+1      866
+Name: count, dtype: int64
+
+Text column created. Average length: 2692 chars
+Average word count: 376 words
+
+============================================================
+🧠 TRAINING MULTIPLE MODELS
+============================================================
+
+📝 Vectorizing text with TF-IDF (max_features=5000)...
+Feature matrix shape: (17880, 5000)
+
+Train size: 14304, Test size: 3576
+
+⚖️  Class distribution: real=17014, fake=866, scale_pos_weight=19.65
+
+────────────────────────────────────────
+🔄 Training: Logistic Regression
+────────────────────────────────────────
+  Accuracy:  96.84%
+  Precision: 61.81%
+  Recall:    90.75%
+  F1-Score:  73.54%
+  ROC-AUC:   98.85%
+  CV F1:     67.79% (±5.30%)
+
+────────────────────────────────────────
+🔄 Training: Random Forest
+────────────────────────────────────────
+  Accuracy:  96.34%
+  Precision: 59.81%
+  Recall:    73.99%
+  F1-Score:  66.15%
+  ROC-AUC:   98.08%
+  CV F1:     61.94% (±9.83%)
+
+────────────────────────────────────────
+🔄 Training: XGBoost
+────────────────────────────────────────
+  Accuracy:  96.67%
+  Precision: 61.25%
+  Recall:    84.97%
+  F1-Score:  71.19%
+  ROC-AUC:   98.83%
+  CV F1:     67.15% (±6.66%)
+
+============================================================
+🏆 BEST MODEL: Logistic Regression (F1: 73.54%)
+============================================================
+
+✅ Model saved to ../ml_model/model.pkl
+✅ Vectorizer saved to ../ml_model/vectorizer.pkl
+
+============================================================
+📊 MODEL COMPARISON SUMMARY
+============================================================
+
+Model                     Accuracy   Precision  Recall     F1         AUC       
+───────────────────────────────────────────────────────────────────────────
+Logistic Regression       96.84      61.81      90.75      73.54      98.85     
+Random Forest             96.34      59.81      73.99      66.15      98.08     
+XGBoost                   96.67      61.25      84.97      71.19      98.83     
+
+✅ Training pipeline completed successfully!
+============================================================
+
+
+
+
+secret key:(render):zQvRsQa4haZuQGamF38KEs4y6FXYn53HJ1FD5toYFqUEvDq_3k2ugR_h128N80I-
+
+

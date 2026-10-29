@@ -10,7 +10,7 @@ chrome.runtime.onInstalled.addListener(() => {
   // Set default settings
   chrome.storage.local.set({
     autoScan: true,
-    apiUrl: 'http://localhost:8000/api',
+    apiUrl: 'https://YOUR_RENDER_URL/api',
     scanCount: 0,
     scamsDetected: 0
   });

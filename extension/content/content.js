@@ -3,7 +3,7 @@
  * Automatically detects job pages and provides scam warnings
  */
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = 'https://YOUR_RENDER_URL/api';
 
 // Auto-detect job pages and show warning badge
 (function() {

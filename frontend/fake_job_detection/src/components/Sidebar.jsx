@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { 
   Shield, BarChart3, Building2, MessageCircle, 
-  History, AlertTriangle, Home, BookOpen, Globe
+  History, Home, BookOpen, Globe
 } from 'lucide-react'
 
 const navItems = [
@@ -50,19 +50,7 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom Section */}
-      <div className="p-4 border-t border-cyber-border">
-        <div className="glass-card p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle className="w-4 h-4 text-yellow-400" />
-            <span className="text-xs font-semibold text-yellow-400">Threat Level</span>
-          </div>
-          <div className="w-full bg-gray-800 rounded-full h-2">
-            <div className="bg-gradient-to-r from-yellow-400 to-red-500 h-2 rounded-full" style={{ width: '65%' }}></div>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">Moderate - 12 new threats today</p>
-        </div>
-      </div>
+
     </aside>
   )
 }
