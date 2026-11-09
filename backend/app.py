@@ -45,11 +45,28 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS configuration
-origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+# Parse allowed origins from environment variable.
+# The special value "*" means allow all origins (useful for the Chrome extension
+# which sends chrome-extension://<id> as its Origin — not a predictable URL).
+_raw_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
+
+# If the env var contains "*" we use allow_origins=["*"].
+# Otherwise split by comma and also always include "null" so that Chrome
+# extension fetch() calls (which browsers send as Origin: null) are accepted.
+if "*" in _raw_origins:
+    origins = ["*"]
+    _allow_credentials = False   # credentials cannot be used with wildcard origin
+else:
+    origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+    # "null" covers Chrome extension requests in some Chrome versions
+    if "null" not in origins:
+        origins.append("null")
+    _allow_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
